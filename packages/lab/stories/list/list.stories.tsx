@@ -36,6 +36,10 @@ import {
 
 import { usa_states } from "./list.data";
 
+const escapeRegExp = (string: string): string => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
 const containerStyle = {
   display: "flex",
   justifyContent: "center",
@@ -677,7 +681,9 @@ export const WithTextHighlight: StoryFn<ListProps> = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     const inputValue = event.target.value;
     setHighlightIndex(
-      inputValue ? new RegExp(`(${inputValue})`, "gi") : undefined,
+      inputValue
+        ? new RegExp(`(${escapeRegExp(inputValue)})`, "gi")
+        : undefined,
     );
   };
 
@@ -749,7 +755,9 @@ export const WithTextHighlightDeclarative: StoryFn<ListProps> = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     const inputValue = event.target.value;
     setHighlightIndex(
-      inputValue ? new RegExp(`(${inputValue})`, "gi") : undefined,
+      inputValue
+        ? new RegExp(`(${escapeRegExp(inputValue)})`, "gi")
+        : undefined,
     );
   };
 
