@@ -11,6 +11,85 @@ const biome = new Biome();
 
 const project = biome.openProject();
 
+/**
+ * Validates that a file argument doesn't contain path traversal sequences.
+ * Only allows alphanumeric characters, hyphens, underscores, dots, and glob wildcards.
+ *
+ * @param {string} arg - The file argument to validate
+ * @returns {boolean} - True if the argument is safe, false otherwise
+ */
+function isValidFileArg(arg) {
+  if (!arg || arg.length === 0) {
+    return true;
+  }
+  const dangerousPatterns = /(\.\.|[/\\]|^~)/;
+  if (dangerousPatterns.test(arg)) {
+    return false;
+  }
+  const allowedPattern = /^[a-zA-Z0-9_\-.*?[\]{}|,]+$/;
+  return allowedPattern.test(arg);
+}
+
+/**
+ * Safely reads a file after validating the path is within the expected directory.
+ * Throws an error if the path is outside the allowed directory.
+ *
+ * @param {string} filePath - The file path to read
+ * @param {string} allowedDir - The directory the file must be within
+ * @param {string} encoding - The file encoding
+ * @returns {string} - The file contents
+ */
+function safeReadFileSync(filePath, allowedDir, encoding = "utf-8") {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedAllowedDir = path.resolve(allowedDir);
+  if (!resolvedPath.startsWith(resolvedAllowedDir + path.sep)) {
+    throw new Error(
+      `Security error: Attempted to read file outside allowed directory: ${filePath}`,
+    );
+  }
+  return fs.readFileSync(resolvedPath, encoding);
+}
+
+/**
+ * Safely reads a file asynchronously after validating the path is within the expected directory.
+ * Throws an error if the path is outside the allowed directory.
+ *
+ * @param {string} filePath - The file path to read
+ * @param {string} allowedDir - The directory the file must be within
+ * @param {string} encoding - The file encoding
+ * @returns {Promise<string>} - The file contents
+ */
+async function safeReadFile(filePath, allowedDir, encoding = "utf-8") {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedAllowedDir = path.resolve(allowedDir);
+  if (!resolvedPath.startsWith(resolvedAllowedDir + path.sep)) {
+    throw new Error(
+      `Security error: Attempted to read file outside allowed directory: ${filePath}`,
+    );
+  }
+  return fs.promises.readFile(resolvedPath, encoding);
+}
+
+/**
+ * Safely writes a file after validating the path is within the expected directory.
+ * Throws an error if the path is outside the allowed directory.
+ *
+ * @param {string} filePath - The file path to write
+ * @param {string} allowedDir - The directory the file must be within
+ * @param {string} content - The content to write
+ * @param {object} options - Write options
+ */
+async function safeWriteFile(filePath, allowedDir, content, options = {}) {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedAllowedDir = path.resolve(allowedDir);
+  if (!resolvedPath.startsWith(resolvedAllowedDir + path.sep)) {
+    throw new Error(
+      `Security error: Attempted to write file outside allowed directory: ${filePath}`,
+    );
+  }
+  return fs.promises.writeFile(resolvedPath, content, options);
+}
+
 biome.applyConfiguration(project.projectKey, {
   assist: { actions: { source: { organizeImports: "on" } } },
   formatter: {
@@ -97,6 +176,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   // options is optional
   const options = {};
 
+  const svgDir = path.join(basePath, "./SVG");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -105,8 +185,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const iconCss = fileNames
     .map((fileName) => {
-      const svgString = fs
-        .readFileSync(fileName, "utf-8")
+      const svgString = safeReadFileSync(fileName, svgDir)
         .trim()
         .replaceAll(/\r?\n|\r/g, "");
 
@@ -172,6 +251,7 @@ const generateIconComponents = async ({
   const options = {};
 
   const template = await fs.promises.readFile(templatePath, "utf-8");
+  const svgDir = path.join(basePath, "./SVG");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -180,7 +260,7 @@ const generateIconComponents = async ({
 
   return Promise.all(
     fileNames.map(async (fileName) => {
-      const svgString = await fs.promises.readFile(fileName, "utf-8");
+      const svgString = await safeReadFile(fileName, svgDir);
 
       const { componentName, iconTitle } =
         getIconMetadataFromFileName(fileName);
@@ -276,7 +356,7 @@ const generateIconComponents = async ({
         newFilePath,
       );
 
-      await fs.promises.writeFile(newFilePath, result, {
+      await safeWriteFile(newFilePath, componentsPath, result, {
         encoding: "utf8",
       });
 
@@ -371,7 +451,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const basePath = path.join(__dirname, "../src");
 const componentsPath = path.join(basePath, "./components/");
 const cssOutputPath = path.join(__dirname, "../saltIcons.css");
-const fileArg = process.argv.splice(2).join("|");
+const rawArgs = process.argv.slice(2);
+for (const arg of rawArgs) {
+  if (!isValidFileArg(arg)) {
+    console.error(
+      `Error: Invalid file argument "${arg}". Arguments must not contain path traversal sequences (../, /, \\, ~) and should only contain alphanumeric characters, hyphens, underscores, dots, and glob wildcards.`,
+    );
+    process.exit(1);
+  }
+}
+const fileArg = rawArgs.join("|");
 const templatePath = path.join(__dirname, "./templateIcon.mustache");
 const allPath = path.join(basePath, "../stories/icon.all.ts");
 const siteAllPath = path.join(
