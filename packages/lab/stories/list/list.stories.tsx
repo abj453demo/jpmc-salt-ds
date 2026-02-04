@@ -9,6 +9,7 @@ import {
 } from "@salt-ds/core";
 import { ArrowDownIcon, ArrowUpIcon } from "@salt-ds/icons";
 import {
+  escapeRegExp,
   FormField,
   Input,
   List,
@@ -677,7 +678,9 @@ export const WithTextHighlight: StoryFn<ListProps> = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     const inputValue = event.target.value;
     setHighlightIndex(
-      inputValue ? new RegExp(`(${inputValue})`, "gi") : undefined,
+      inputValue
+        ? new RegExp(`(${escapeRegExp(inputValue)})`, "gi")
+        : undefined,
     );
   };
 
@@ -749,7 +752,9 @@ export const WithTextHighlightDeclarative: StoryFn<ListProps> = () => {
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     const inputValue = event.target.value;
     setHighlightIndex(
-      inputValue ? new RegExp(`(${inputValue})`, "gi") : undefined,
+      inputValue
+        ? new RegExp(`(${escapeRegExp(inputValue)})`, "gi")
+        : undefined,
     );
   };
 
