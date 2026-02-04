@@ -7,6 +7,39 @@ import Mustache from "mustache";
 import { optimize } from "svgo";
 import { svgAttributeMap } from "./svgAttributeMap.mjs";
 
+/**
+ * Sanitize a file argument to prevent path traversal attacks.
+ * Removes path separators and traversal sequences.
+ *
+ * @param {string} input - The input string to sanitize
+ * @returns {string} - The sanitized string
+ */
+function sanitizeFileArg(input) {
+  if (!input) return "";
+  return input.replace(/\.\./g, "").replace(/[/\\]/g, "").replace(/\0/g, "");
+}
+
+/**
+ * Validate that a file path is within the expected base directory.
+ * Throws an error if the path would escape the base directory.
+ *
+ * @param {string} filePath - The file path to validate
+ * @param {string} baseDir - The expected base directory
+ * @throws {Error} - If the path is outside the base directory
+ */
+function validatePathWithinBase(filePath, baseDir) {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedBase = path.resolve(baseDir);
+  if (
+    !resolvedPath.startsWith(resolvedBase + path.sep) &&
+    resolvedPath !== resolvedBase
+  ) {
+    throw new Error(
+      `Path traversal detected: ${filePath} is outside of ${baseDir}`,
+    );
+  }
+}
+
 const biome = new Biome();
 
 const project = biome.openProject();
@@ -276,6 +309,7 @@ const generateIconComponents = async ({
         newFilePath,
       );
 
+      validatePathWithinBase(newFilePath, componentsPath);
       await fs.promises.writeFile(newFilePath, result, {
         encoding: "utf8",
       });
@@ -371,7 +405,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const basePath = path.join(__dirname, "../src");
 const componentsPath = path.join(basePath, "./components/");
 const cssOutputPath = path.join(__dirname, "../saltIcons.css");
-const fileArg = process.argv.splice(2).join("|");
+const fileArg = sanitizeFileArg(process.argv.splice(2).join("|"));
 const templatePath = path.join(__dirname, "./templateIcon.mustache");
 const allPath = path.join(basePath, "../stories/icon.all.ts");
 const siteAllPath = path.join(
