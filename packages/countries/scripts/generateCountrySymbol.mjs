@@ -36,16 +36,24 @@ function isValidFileArg(arg) {
 }
 
 /**
- * Validates that a file path is within the expected base directory.
- * @param {string} filePath - The file path to validate
- * @param {string} baseDir - The expected base directory
- * @returns {boolean} - True if the file is within the base directory
+ * Safely reads a file after validating it's within the expected directory.
+ * This function creates a clear sanitization boundary for static analysis tools.
+ * @param {string} filePath - The file path to read
+ * @param {string} allowedDir - The directory the file must be within
+ * @returns {string} - The file contents
+ * @throws {Error} - If the file is outside the allowed directory
  */
-function isPathWithinDirectory(filePath, baseDir) {
+function safeReadFile(filePath, allowedDir) {
   const resolvedFilePath = path.resolve(filePath);
-  const resolvedBaseDir = path.resolve(baseDir);
+  const resolvedAllowedDir = path.resolve(allowedDir);
 
-  return resolvedFilePath.startsWith(resolvedBaseDir + path.sep);
+  if (!resolvedFilePath.startsWith(resolvedAllowedDir + path.sep)) {
+    throw new Error(
+      `Security error: Attempted to read file outside allowed directory: ${filePath}`,
+    );
+  }
+
+  return fs.readFileSync(resolvedFilePath, "utf-8");
 }
 
 const biome = new Biome();
@@ -123,10 +131,8 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const countryCss = fileNames
     .filter((fileName) => !fileName.includes("_sharp"))
-    .filter((fileName) => isPathWithinDirectory(fileName, svgDir))
     .map((fileName) => {
-      const svgString = fs
-        .readFileSync(fileName, "utf-8")
+      const svgString = safeReadFile(fileName, svgDir)
         .trim()
         .replaceAll(/\r?\n|\r/g, "");
 
@@ -164,10 +170,8 @@ const generateSharpCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const countryCss = fileNames
     .filter((fileName) => fileName.includes("_sharp"))
-    .filter((fileName) => isPathWithinDirectory(fileName, svgDir))
     .map((fileName) => {
-      const svgString = fs
-        .readFileSync(fileName, "utf-8")
+      const svgString = safeReadFile(fileName, svgDir)
         .trim()
         .replaceAll(/\r?\n|\r/g, "");
 
@@ -215,12 +219,10 @@ const generateCountrySymbolComponents = ({
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
 
-  const fileNames = glob
-    .sync(globPath, options)
-    .filter((fileName) => isPathWithinDirectory(fileName, svgDir));
+  const fileNames = glob.sync(globPath, options);
 
   for (const fileName of fileNames) {
-    const svgString = fs.readFileSync(fileName, "utf-8");
+    const svgString = safeReadFile(fileName, svgDir);
 
     const { countryCode, countryName, variant } =
       getCountrySymbolMetadataFromFileName(fileName);
