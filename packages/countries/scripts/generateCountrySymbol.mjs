@@ -8,6 +8,46 @@ import { optimize } from "svgo";
 
 import { svgAttributeMap } from "./svgAttributeMap.mjs";
 
+/**
+ * Validates that a file argument doesn't contain path traversal sequences.
+ * @param {string} arg - The argument to validate
+ * @returns {boolean} - True if the argument is safe, false otherwise
+ */
+function isValidFileArg(arg) {
+  // Reject empty arguments
+  if (!arg || arg.trim() === "") {
+    return true; // Empty is allowed, will match nothing
+  }
+
+  // Reject path traversal sequences and absolute paths
+  const dangerousPatterns = [
+    "..", // Parent directory traversal
+    "/", // Unix absolute path or directory separator
+    "\\", // Windows path separator
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (arg.includes(pattern)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Validates that a file path is within the expected base directory.
+ * @param {string} filePath - The file path to validate
+ * @param {string} baseDir - The expected base directory
+ * @returns {boolean} - True if the file is within the base directory
+ */
+function isPathWithinDirectory(filePath, baseDir) {
+  const resolvedFilePath = path.resolve(filePath);
+  const resolvedBaseDir = path.resolve(baseDir);
+
+  return resolvedFilePath.startsWith(resolvedBaseDir + path.sep);
+}
+
 const biome = new Biome();
 
 const project = biome.openProject();
@@ -74,6 +114,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   // options is optional
   const options = {};
 
+  const svgDir = path.join(basePath, "./SVG/");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -82,6 +123,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const countryCss = fileNames
     .filter((fileName) => !fileName.includes("_sharp"))
+    .filter((fileName) => isPathWithinDirectory(fileName, svgDir))
     .map((fileName) => {
       const svgString = fs
         .readFileSync(fileName, "utf-8")
@@ -113,6 +155,7 @@ const generateSharpCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   // options is optional
   const options = {};
 
+  const svgDir = path.join(basePath, "./SVG/");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -121,6 +164,7 @@ const generateSharpCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const countryCss = fileNames
     .filter((fileName) => fileName.includes("_sharp"))
+    .filter((fileName) => isPathWithinDirectory(fileName, svgDir))
     .map((fileName) => {
       const svgString = fs
         .readFileSync(fileName, "utf-8")
@@ -165,12 +209,15 @@ const generateCountrySymbolComponents = ({
   // options is optional
   const options = {};
 
+  const svgDir = path.join(basePath, "./SVG/");
   const template = fs.readFileSync(templatePath, "utf-8");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
 
-  const fileNames = glob.sync(globPath, options);
+  const fileNames = glob
+    .sync(globPath, options)
+    .filter((fileName) => isPathWithinDirectory(fileName, svgDir));
 
   for (const fileName of fileNames) {
     const svgString = fs.readFileSync(fileName, "utf-8");
@@ -442,7 +489,17 @@ const componentsPath = path.join(basePath, "./components/");
 const templatePath = path.join(__dirname, "./templateCountrySymbol.mustache");
 const cssOutputPath = path.join(__dirname, "../saltCountries.css");
 const sharpCssOutputPath = path.join(__dirname, "../saltSharpCountries.css");
-const fileArg = process.argv.splice(2).join("|");
+
+const rawArgs = process.argv.slice(2);
+for (const arg of rawArgs) {
+  if (!isValidFileArg(arg)) {
+    console.error(
+      `Error: Invalid file argument "${arg}". Arguments must not contain path traversal sequences (../, /, \\).`,
+    );
+    process.exit(1);
+  }
+}
+const fileArg = rawArgs.join("|");
 
 generateComponentsFolder(basePath);
 const countryMetaMap = generateCountrySymbolComponents({
