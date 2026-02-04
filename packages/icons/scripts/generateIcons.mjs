@@ -11,6 +11,62 @@ const biome = new Biome();
 
 const project = biome.openProject();
 
+/**
+ * Validates that a file argument is safe and doesn't contain path traversal sequences.
+ * Only allows alphanumeric characters, hyphens, underscores, dots, and glob wildcards.
+ *
+ * @param {string} arg - The file argument to validate
+ * @returns {string} - The validated argument
+ * @throws {Error} - If the argument contains unsafe characters
+ */
+function validateFileArg(arg) {
+  if (!arg) {
+    return arg;
+  }
+
+  // Check for path traversal sequences
+  if (arg.includes("..") || arg.includes("/") || arg.includes("\\")) {
+    throw new Error(
+      `Invalid file argument: "${arg}" contains path traversal characters`,
+    );
+  }
+
+  // Only allow safe characters: alphanumeric, hyphens, underscores, dots, asterisks, and pipes (for joining multiple args)
+  const safePattern = /^[a-zA-Z0-9_\-.*|]+$/;
+  if (!safePattern.test(arg)) {
+    throw new Error(
+      `Invalid file argument: "${arg}" contains unsafe characters`,
+    );
+  }
+
+  return arg;
+}
+
+/**
+ * Validates that a file path is within the expected base directory and returns a safe path.
+ * This function resolves the path and ensures it doesn't escape the expected directory.
+ *
+ * @param {string} filePath - The file path to validate
+ * @param {string} expectedBase - The expected base directory
+ * @returns {string} - The validated and resolved file path
+ * @throws {Error} - If the file path is outside the expected directory
+ */
+function getSafeFilePath(filePath, expectedBase) {
+  // Resolve both paths to absolute paths to handle any relative path components
+  const resolvedPath = path.resolve(filePath);
+  const resolvedBase = path.resolve(expectedBase);
+
+  // Ensure the resolved path is within the expected base directory
+  if (!resolvedPath.startsWith(resolvedBase + path.sep)) {
+    throw new Error(
+      `Invalid file path: "${filePath}" is outside the expected directory`,
+    );
+  }
+
+  // Return the resolved path which is now known to be safe
+  return resolvedPath;
+}
+
 biome.applyConfiguration(project.projectKey, {
   assist: { actions: { source: { organizeImports: "on" } } },
   formatter: {
@@ -97,6 +153,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   // options is optional
   const options = {};
 
+  const svgBasePath = path.join(basePath, "./SVG");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -105,8 +162,11 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 
   const iconCss = fileNames
     .map((fileName) => {
+      // Get a safe file path that is validated to be within the expected SVG directory
+      const safeFilePath = getSafeFilePath(fileName, svgBasePath);
+
       const svgString = fs
-        .readFileSync(fileName, "utf-8")
+        .readFileSync(safeFilePath, "utf-8")
         .trim()
         .replaceAll(/\r?\n|\r/g, "");
 
@@ -148,10 +208,23 @@ const DEPRECATED_ICONS = [
 const deprecatedIconMap = new Map(DEPRECATED_ICONS);
 
 function getIconMetadataFromFileName(fileName) {
-  const filenameWithoutExtension = path.parse(fileName).name;
+  // Use path.basename to ensure we only get the filename without any directory components
+  const basename = path.basename(fileName);
+  const filenameWithoutExtension = path.parse(basename).name;
   const parts = filenameWithoutExtension.split("_");
 
   const componentName = pascalCase(parts.join("-"));
+
+  // Validate that the component name doesn't contain path traversal characters
+  if (
+    componentName.includes("..") ||
+    componentName.includes("/") ||
+    componentName.includes("\\")
+  ) {
+    throw new Error(
+      `Invalid component name: "${componentName}" contains path traversal characters`,
+    );
+  }
 
   return {
     componentName,
@@ -172,6 +245,7 @@ const generateIconComponents = async ({
   const options = {};
 
   const template = await fs.promises.readFile(templatePath, "utf-8");
+  const svgBasePath = path.join(basePath, "./SVG");
   const globPath = path
     .join(basePath, `./SVG/+(${fileArg})`)
     .replace(/\\/g, "/");
@@ -180,12 +254,19 @@ const generateIconComponents = async ({
 
   return Promise.all(
     fileNames.map(async (fileName) => {
-      const svgString = await fs.promises.readFile(fileName, "utf-8");
+      // Get a safe file path that is validated to be within the expected SVG directory
+      const safeFilePath = getSafeFilePath(fileName, svgBasePath);
+
+      const svgString = await fs.promises.readFile(safeFilePath, "utf-8");
 
       const { componentName, iconTitle } =
         getIconMetadataFromFileName(fileName);
       let viewBox;
-      const newFilePath = path.join(componentsPath, `${componentName}.tsx`);
+      // Construct the output file path and validate it's within the components directory
+      const newFilePath = getSafeFilePath(
+        path.join(componentsPath, `${componentName}.tsx`),
+        componentsPath,
+      );
 
       console.log("processing", fileName, "to", newFilePath);
 
@@ -371,7 +452,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const basePath = path.join(__dirname, "../src");
 const componentsPath = path.join(basePath, "./components/");
 const cssOutputPath = path.join(__dirname, "../saltIcons.css");
-const fileArg = process.argv.splice(2).join("|");
+// Validate the file argument to prevent path traversal attacks
+const fileArg = validateFileArg(process.argv.splice(2).join("|"));
 const templatePath = path.join(__dirname, "./templateIcon.mustache");
 const allPath = path.join(basePath, "../stories/icon.all.ts");
 const siteAllPath = path.join(
