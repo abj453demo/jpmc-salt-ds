@@ -10,6 +10,28 @@ import { svgAttributeMap } from "./svgAttributeMap.mjs";
 
 const biome = new Biome();
 
+function validateFileArg(fileArg) {
+  if (fileArg.includes("..") || path.isAbsolute(fileArg)) {
+    throw new Error("Invalid file argument: path traversal detected");
+  }
+  if (!/^[a-zA-Z0-9_\-.*|]+$/.test(fileArg)) {
+    throw new Error("Invalid file argument: contains disallowed characters");
+  }
+  return fileArg;
+}
+
+function validateFilePath(filePath, allowedBasePath) {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedBasePath = path.resolve(allowedBasePath);
+  if (
+    !resolvedPath.startsWith(resolvedBasePath + path.sep) &&
+    resolvedPath !== resolvedBasePath
+  ) {
+    throw new Error(`File path ${filePath} is outside allowed directory`);
+  }
+  return filePath;
+}
+
 const project = biome.openProject();
 
 biome.applyConfiguration(project.projectKey, {
@@ -70,7 +92,7 @@ function getCountrySymbolMetadataFromFileName(fileName) {
 }
 
 /** Generate all country SVG as background image, in a single CSS */
-const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
+const generateCssAsBg = ({ basePath, cssOutputPath, fileArg, svgBasePath }) => {
   // options is optional
   const options = {};
 
@@ -83,6 +105,7 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   const countryCss = fileNames
     .filter((fileName) => !fileName.includes("_sharp"))
     .map((fileName) => {
+      validateFilePath(fileName, svgBasePath);
       const svgString = fs
         .readFileSync(fileName, "utf-8")
         .trim()
@@ -109,7 +132,12 @@ const generateCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
 };
 
 /** Generate all sharp country SVG as background image, in a single CSS */
-const generateSharpCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
+const generateSharpCssAsBg = ({
+  basePath,
+  cssOutputPath,
+  fileArg,
+  svgBasePath,
+}) => {
   // options is optional
   const options = {};
 
@@ -122,6 +150,7 @@ const generateSharpCssAsBg = ({ basePath, cssOutputPath, fileArg }) => {
   const countryCss = fileNames
     .filter((fileName) => fileName.includes("_sharp"))
     .map((fileName) => {
+      validateFilePath(fileName, svgBasePath);
       const svgString = fs
         .readFileSync(fileName, "utf-8")
         .trim()
@@ -159,6 +188,7 @@ const generateCountrySymbolComponents = ({
   basePath,
   componentsPath,
   fileArg,
+  svgBasePath,
 }) => {
   const countryMetaMap = {};
 
@@ -173,6 +203,7 @@ const generateCountrySymbolComponents = ({
   const fileNames = glob.sync(globPath, options);
 
   for (const fileName of fileNames) {
+    validateFilePath(fileName, svgBasePath);
     const svgString = fs.readFileSync(fileName, "utf-8");
 
     const { countryCode, countryName, variant } =
@@ -442,7 +473,8 @@ const componentsPath = path.join(basePath, "./components/");
 const templatePath = path.join(__dirname, "./templateCountrySymbol.mustache");
 const cssOutputPath = path.join(__dirname, "../saltCountries.css");
 const sharpCssOutputPath = path.join(__dirname, "../saltSharpCountries.css");
-const fileArg = process.argv.splice(2).join("|");
+const fileArg = validateFileArg(process.argv.splice(2).join("|"));
+const svgBasePath = path.join(basePath, "./SVG/");
 
 generateComponentsFolder(basePath);
 const countryMetaMap = generateCountrySymbolComponents({
@@ -450,16 +482,19 @@ const countryMetaMap = generateCountrySymbolComponents({
   componentsPath,
   basePath,
   fileArg,
+  svgBasePath,
 });
 generateCssAsBg({
   basePath,
   cssOutputPath,
   fileArg,
+  svgBasePath,
 });
 generateSharpCssAsBg({
   basePath,
   cssOutputPath: sharpCssOutputPath,
   fileArg,
+  svgBasePath,
 });
 generateCountryMetaMap({ countryMetaMap, basePath });
 generateLazyMap({ countryMetaMap, basePath });
